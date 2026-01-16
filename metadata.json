@@ -1,0 +1,5 @@
+{
+  "name": "Copy of ChromaSort: AI Picture Organizer",
+  "description": "An intelligent picture organizer that uses the Gemini API to analyze images, extract dominant colors, and allows you to sort and filter your gallery by color palette.",
+  "requestFramePermissions": []
+}
