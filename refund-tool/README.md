@@ -58,6 +58,28 @@ expensive; on a six-week-old L2 there is unlikely to be an audited disperse cont
 deployed, and pointing the tool at an unverified one risks the entire batch value.
 Gas here is cheap enough that one transaction per minter is both simpler and safer.
 
+## Quick path: refund everyone who sent ≥ 0.0009 ETH
+
+If the mint fee was paid **straight to the wallet** (no NFT contract in the middle),
+this is the whole job. `--min-eth 0.0009` catches 0.001 and 0.002 payers alike
+without having to pin the exact price:
+
+```bash
+npm run index:inbound -- --min-eth 0.0009 --since-days 30
+npm run plan
+npm run send                       # dry run — read plan.csv first
+npm run send -- --execute --limit 1   # one real refund, verify on the explorer
+npm run send -- --execute             # the rest
+```
+
+By default each wallet gets back **exactly what it sent** — a 0.001 payer gets
+0.001, a 0.002 payer gets 0.002. If you'd rather pay everyone the same fixed
+amount, add `--flat-eth 0.001` to the `plan` step.
+
+The indexer prints a breakdown of every payment amount the wallet received, so run
+it once and let the data tell you what the real mint price was before you commit to
+a filter.
+
 ## Step 1 — index the mints
 
 ```bash
@@ -77,6 +99,35 @@ address), then resolves each mint transaction to its sender and its ETH value.
 | `--log-concurrency` | `12` | Parallel log windows — lower it if you get rate-limited |
 | `--concurrency` | `8` | Parallel tx lookups |
 
+## Step 1, alternative — index inbound payments
+
+Use this when fees were paid directly to the wallet, so there are no mint events to
+scan. It reads the wallet's incoming transfers from Blockscout and writes the same
+ledger format, so steps 2 and 3 are unchanged.
+
+```bash
+npm run index:inbound -- --min-eth 0.0009 --since-days 30
+```
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--address` | `REFUND_FROM` | Wallet that received the payments |
+| `--min-eth` | none | Keep payments greater than or equal to this |
+| `--max-eth` | none | Keep payments less than or equal to this |
+| `--exact-eth` | none | Keep only these exact amounts — comma-separate several (`0.001,0.002`) |
+| `--since-days` | none | Keep only the last N days |
+| `--since` | none | Explicit cutoff date, e.g. `2026-07-01` |
+| `--explorer` | Robinhood Blockscout | Explorer API base URL |
+| `--max-pages` | `1000` | Pagination guard; warns loudly if it truncates history |
+
+Failed transactions, zero-value transfers, and the wallet's own outgoing
+transactions are always excluded. Multiple payments from one wallet are aggregated
+into a single refund.
+
+**This sees direct transactions only.** ETH that arrived via a contract (an internal
+transaction) does not appear. Cross-check the total against the wallet balance on
+the explorer before refunding.
+
 ## Step 2 — build the refund plan
 
 ```bash
@@ -90,6 +141,7 @@ wallet's live balance so you know up front whether the wallet covers it.
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--refund-to` | `payer` | `payer` = whoever sent the mint tx; `receiver` = whoever got the token |
+| `--flat-eth` | none | Pay every wallet this fixed amount instead of what it actually sent |
 | `--min-wei` | `0` | Drop dust refunds that would cost more in gas than they return |
 | `--max-wei` | none | Safety cap — anything above it is excluded for manual review |
 | `--include-routed` | off | Include mints made through an aggregator (see caveats) |

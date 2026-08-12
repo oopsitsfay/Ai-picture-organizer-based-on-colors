@@ -187,6 +187,8 @@ export interface MintTx {
   /** Direct call target. When this is not the collection, the mint was routed. */
   calledContract: Address | null;
   valueWei: string;
+  /** ISO timestamp, when the source provides one. */
+  timestamp?: string;
   /** Recipients of minted tokens in this tx, with quantity each. */
   receivers: { address: Address; quantity: string }[];
   /** Value did not go straight to the collection — may include marketplace fees. */

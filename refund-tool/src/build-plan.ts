@@ -7,7 +7,7 @@
  *
  *   npm run plan -- --ledger data/ledger.json
  */
-import { formatEther, getAddress, type Address } from 'viem';
+import { formatEther, getAddress, parseEther, type Address } from 'viem';
 import {
   ZERO_ADDRESS,
   envAddress,
@@ -36,6 +36,9 @@ async function main(): Promise<void> {
     | 'receiver';
   const minWei = BigInt(typeof args['min-wei'] === 'string' ? args['min-wei'] : '0');
   const maxWeiArg = typeof args['max-wei'] === 'string' ? BigInt(args['max-wei']) : null;
+  // Flat mode pays every qualifying wallet the same fixed amount, regardless of how
+  // much it actually sent. Without it, each wallet gets back the sum of what it paid.
+  const flatWei = typeof args['flat-eth'] === 'string' ? parseEther(args['flat-eth']) : null;
   const includeRouted = args['include-routed'] === true;
   const excludeContracts = args['exclude-contracts'] === true;
   const concurrency = optionalNumber(args, 'concurrency', 8);
@@ -140,10 +143,11 @@ async function main(): Promise<void> {
       return;
     }
 
+    const payout = flatWei ?? entry.wei;
     refunds.push({
       address,
-      amountWei: entry.wei.toString(),
-      amountEth: formatEther(entry.wei),
+      amountWei: payout.toString(),
+      amountEth: formatEther(payout),
       mintTxCount: entry.txCount,
       isContract,
     });
@@ -153,6 +157,7 @@ async function main(): Promise<void> {
 
   const totalWei = refunds.reduce((sum, refund) => sum + BigInt(refund.amountWei), 0n);
   const contractCount = refunds.filter((refund) => refund.isContract).length;
+  const repeatPayers = refunds.filter((refund) => refund.mintTxCount > 1);
 
   const plan: Plan = {
     chainId,
@@ -200,11 +205,21 @@ async function main(): Promise<void> {
       '',
       '─'.repeat(64),
       `Refund basis      : ${refundTo === 'payer' ? 'address that sent the mint tx' : 'address that received the token'}`,
+      `Payout rule       : ${
+        flatWei !== null
+          ? `flat ${formatEther(flatWei)} ETH per wallet`
+          : 'exactly what each wallet paid'
+      }`,
       `Recipients        : ${refunds.length}`,
       `Total to refund   : ${eth(totalWei)}`,
       `Wallet balance    : ${eth(balance)}`,
       `Contract wallets  : ${contractCount} (verify these can receive ETH)`,
       `Excluded entries  : ${excluded.length}`,
+      repeatPayers.length > 0
+        ? `Repeat payers     : ${repeatPayers.length} wallet(s) paid more than once${
+            flatWei !== null ? ' — each still gets the single flat amount' : ''
+          }`
+        : 'Repeat payers     : none',
       skippedRoutedCount > 0
         ? `  ↳ routed mints  : ${skippedRoutedCount} worth ${eth(skippedRoutedWei)} — review, then --include-routed`
         : '  ↳ routed mints  : none',

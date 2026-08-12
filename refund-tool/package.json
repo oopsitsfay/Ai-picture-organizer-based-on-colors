@@ -6,6 +6,7 @@
   "description": "Index mint fees paid to an NFT contract and batch-refund them to the original payers.",
   "scripts": {
     "index": "tsx src/index-mints.ts",
+    "index:inbound": "tsx src/index-inbound.ts",
     "plan": "tsx src/build-plan.ts",
     "send": "tsx src/send.ts",
     "typecheck": "tsc --noEmit"
