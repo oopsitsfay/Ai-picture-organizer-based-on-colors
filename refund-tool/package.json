@@ -1,0 +1,22 @@
+{
+  "name": "mint-refund-tool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Index mint fees paid to an NFT contract and batch-refund them to the original payers.",
+  "scripts": {
+    "index": "tsx src/index-mints.ts",
+    "plan": "tsx src/build-plan.ts",
+    "send": "tsx src/send.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
