@@ -66,53 +66,93 @@ async function findDeployBlock(client: PublicClient, contract: Address): Promise
   return low;
 }
 
-/** getLogs over a block range, halving the window whenever a provider rejects the span. */
+type MintEvent = typeof ERC721_TRANSFER | typeof ERC1155_SINGLE | typeof ERC1155_BATCH;
+
+/**
+ * Fetches one block window, splitting it in half whenever the provider rejects the
+ * range. Providers cap eth_getLogs at anywhere from 2k to 50k blocks (and some cap
+ * on result count instead), so the window that works is discovered rather than
+ * assumed.
+ */
+async function fetchWindow(
+  client: PublicClient,
+  contract: Address,
+  event: MintEvent,
+  fromBlock: bigint,
+  toBlock: bigint,
+  depth = 0,
+): Promise<any[]> {
+  try {
+    return await withRetry(
+      () =>
+        client.getLogs({
+          address: contract,
+          event: event as any,
+          args: { from: ZERO_ADDRESS } as any,
+          fromBlock,
+          toBlock,
+        }),
+      3,
+    );
+  } catch (error) {
+    if (fromBlock >= toBlock || depth > 24) throw error;
+    const mid = fromBlock + (toBlock - fromBlock) / 2n;
+    const [lower, upper] = await Promise.all([
+      fetchWindow(client, contract, event, fromBlock, mid, depth + 1),
+      fetchWindow(client, contract, event, mid + 1n, toBlock, depth + 1),
+    ]);
+    return [...lower, ...upper];
+  }
+}
+
+/**
+ * Scans a block range in parallel windows. Chains with sub-second blocks produce
+ * tens of millions of blocks over a short calendar period, so a serial scan is not
+ * viable — the windows have to go out concurrently.
+ */
 async function getLogsChunked(
   client: PublicClient,
   contract: Address,
-  event: typeof ERC721_TRANSFER | typeof ERC1155_SINGLE | typeof ERC1155_BATCH,
+  event: MintEvent,
   fromBlock: bigint,
   toBlock: bigint,
-  initialSpan: bigint,
+  span: bigint,
+  concurrency: number,
+  label: string,
 ): Promise<any[]> {
-  const collected: any[] = [];
-  let cursor = fromBlock;
-  let span = initialSpan;
-
-  while (cursor <= toBlock) {
+  const windows: { from: bigint; to: bigint }[] = [];
+  for (let cursor = fromBlock; cursor <= toBlock; cursor += span) {
     const end = cursor + span - 1n > toBlock ? toBlock : cursor + span - 1n;
-    try {
-      const logs = await withRetry(
-        () =>
-          client.getLogs({
-            address: contract,
-            event: event as any,
-            args: { from: ZERO_ADDRESS } as any,
-            fromBlock: cursor,
-            toBlock: end,
-          }),
-        3,
-      );
-      collected.push(...logs);
-      cursor = end + 1n;
-      // Creep the window back up after a success so one bad range does not slow the whole scan.
-      if (span < initialSpan) span *= 2n;
-    } catch (error) {
-      if (span <= 1n) throw error;
-      span /= 2n;
-      process.stderr.write(`  range too large near block ${cursor}, retrying with span ${span}\n`);
-    }
+    windows.push({ from: cursor, to: end });
   }
 
-  return collected;
+  process.stdout.write(`  ${label}: ${windows.length} windows of ${span} blocks\n`);
+
+  let completed = 0;
+  const step = Math.max(1, Math.floor(windows.length / 20));
+
+  const batches = await mapPool(windows, concurrency, async (window) => {
+    const logs = await fetchWindow(client, contract, event, window.from, window.to);
+    completed++;
+    if (completed % step === 0 || completed === windows.length) {
+      const pct = Math.round((completed / windows.length) * 100);
+      process.stdout.write(`  ${label}: ${pct}% (${completed}/${windows.length} windows)\n`);
+    }
+    return logs;
+  });
+
+  return batches.flat();
 }
 
 async function main(): Promise<void> {
   const args = parseArgs();
   const contract = requireAddress(requireString(args, 'contract'), '--contract');
   const standard = (typeof args.standard === 'string' ? args.standard : 'auto').toLowerCase();
-  const span = BigInt(optionalNumber(args, 'block-span', 2000));
+  // 10k matches the cap most providers enforce; windows that are still too wide
+  // split themselves at runtime.
+  const span = BigInt(optionalNumber(args, 'block-span', 10_000));
   const concurrency = optionalNumber(args, 'concurrency', 8);
+  const logConcurrency = optionalNumber(args, 'log-concurrency', 12);
   const out = typeof args.out === 'string' ? args.out : 'data/ledger.json';
 
   const { client, chainId } = await getPublicClient();
@@ -129,16 +169,46 @@ async function main(): Promise<void> {
   }
 
   const toBlock = typeof args['to-block'] === 'string' ? BigInt(args['to-block']) : latest;
+  if (toBlock < fromBlock) throw new Error('--to-block is before --from-block');
+
+  const blockCount = toBlock - fromBlock + 1n;
+  const windowCount = (blockCount + span - 1n) / span;
 
   process.stdout.write(
-    `\nChain ${chainId} | collection ${contract}\nScanning blocks ${fromBlock} → ${toBlock}\n\n`,
+    [
+      '',
+      `Chain      : ${chainId}`,
+      `Collection : ${contract}`,
+      `Blocks     : ${fromBlock} → ${toBlock}  (${blockCount.toLocaleString()} blocks)`,
+      `Windows    : ~${windowCount.toLocaleString()} per event type, ${logConcurrency} at a time`,
+      '',
+    ].join('\n'),
   );
+
+  // Sub-second block times make calendar-short ranges enormous. Warn rather than
+  // silently grinding through tens of thousands of requests.
+  if (windowCount > 5_000n) {
+    process.stdout.write(
+      `⚠️  That is a lot of requests. If you know the collection's deploy block,\n` +
+        `   pass --from-block <n> to skip the empty history, and raise --block-span\n` +
+        `   if your provider allows windows wider than ${span}.\n\n`,
+    );
+  }
 
   const raw: RawMint[] = [];
 
   if (standard === 'auto' || standard === 'erc721') {
     process.stdout.write('Scanning ERC-721 Transfer mints...\n');
-    const logs = await getLogsChunked(client, contract, ERC721_TRANSFER, fromBlock, toBlock, span);
+    const logs = await getLogsChunked(
+      client,
+      contract,
+      ERC721_TRANSFER,
+      fromBlock,
+      toBlock,
+      span,
+      logConcurrency,
+      'ERC-721',
+    );
     for (const log of logs) {
       raw.push({
         txHash: log.transactionHash,
@@ -152,7 +222,16 @@ async function main(): Promise<void> {
 
   if (standard === 'auto' || standard === 'erc1155') {
     process.stdout.write('Scanning ERC-1155 mints...\n');
-    const singles = await getLogsChunked(client, contract, ERC1155_SINGLE, fromBlock, toBlock, span);
+    const singles = await getLogsChunked(
+      client,
+      contract,
+      ERC1155_SINGLE,
+      fromBlock,
+      toBlock,
+      span,
+      logConcurrency,
+      'TransferSingle',
+    );
     for (const log of singles) {
       raw.push({
         txHash: log.transactionHash,
@@ -162,7 +241,16 @@ async function main(): Promise<void> {
       });
     }
 
-    const batches = await getLogsChunked(client, contract, ERC1155_BATCH, fromBlock, toBlock, span);
+    const batches = await getLogsChunked(
+      client,
+      contract,
+      ERC1155_BATCH,
+      fromBlock,
+      toBlock,
+      span,
+      logConcurrency,
+      'TransferBatch',
+    );
     for (const log of batches) {
       const values = log.args.values as bigint[];
       const total = values.reduce((sum, value) => sum + value, 0n);

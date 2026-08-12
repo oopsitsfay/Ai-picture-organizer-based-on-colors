@@ -24,6 +24,40 @@ cp .env.example .env      # fill in RPC_URL; PRIVATE_KEY only when you're ready 
 Use a paid or archive RPC endpoint. Public endpoints rate-limit historical log
 queries hard, and step 1 is one long log scan.
 
+## Robinhood Chain notes
+
+| | |
+| --- | --- |
+| Chain ID | `4663` |
+| Public RPC | `https://rpc.mainnet.chain.robinhood.com` |
+| Native currency | ETH |
+| Explorer | `robinhoodchain.blockscout.com` |
+
+Two things about this chain change how you run step 1:
+
+**Block times are ~100ms.** Mainnet opened 1 July 2026, so the chain is already tens
+of millions of blocks deep. Scanning from block 0 means thousands of `eth_getLogs`
+calls. **Get the collection's deploy block from Blockscout and pass it explicitly** —
+it turns a very long scan into a short one:
+
+```bash
+npm run index -- --contract 0xYourCollection --from-block <deploy block>
+```
+
+`--from-block auto` also works (it binary-searches the deploy block in ~25 calls),
+but only against an archive endpoint.
+
+**Providers cap `eth_getLogs` around 10,000 blocks.** That is the default here. Any
+window the provider still rejects splits itself in half automatically, so a wrong
+guess costs a retry rather than a failed run. If your endpoint allows wider windows,
+raise `--block-span` — it is the single biggest lever on scan time. If you get rate
+limited, lower `--log-concurrency` (default 12).
+
+**Use sequential mode to send.** Disperse-style batching helps on L1 where gas is
+expensive; on a six-week-old L2 there is unlikely to be an audited disperse contract
+deployed, and pointing the tool at an unverified one risks the entire batch value.
+Gas here is cheap enough that one transaction per minter is both simpler and safer.
+
 ## Step 1 — index the mints
 
 ```bash
@@ -39,8 +73,9 @@ address), then resolves each mint transaction to its sender and its ETH value.
 | `--from-block` | `auto` | `auto` binary-searches the deploy block (needs an archive node) |
 | `--to-block` | latest | |
 | `--standard` | `auto` | `erc721`, `erc1155`, or `auto` for both |
-| `--block-span` | `2000` | Log window; auto-halves when the provider rejects a range |
-| `--concurrency` | `8` | Parallel tx lookups — lower it if you get rate-limited |
+| `--block-span` | `10000` | Log window; windows that are rejected split themselves in half |
+| `--log-concurrency` | `12` | Parallel log windows — lower it if you get rate-limited |
+| `--concurrency` | `8` | Parallel tx lookups |
 
 ## Step 2 — build the refund plan
 
