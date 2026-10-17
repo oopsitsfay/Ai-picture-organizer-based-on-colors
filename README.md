@@ -1,21 +1,18 @@
-# SHADE
+# GLASS
 
-*Bitcoin, kept quiet.*
+*Bitcoin is see-through.*
 
-A BTC + privacy Ordinals collection that mines `$SHADE`: 21,000,000 max supply, claimed once a week,
-until the next Bitcoin halving (block 1,050,000). Hash power comes from rarity + floor traits.
+Paste a Bitcoin address or transaction ID and see what the public chain reveals about it, scored from 0 to 100, with a fix for every leak.
 
-Pages (hash routes, so it runs on any static host):
+- **Address report:** address reuse, addresses linked by spending together (common-input ownership), change sent back to the same address, round payments that give away change, merged coins, dust, address type, CoinJoin participation. Lists the addresses that probably share an owner and flags each recent transaction.
+- **Transaction report:** which inputs get clustered, which output is change and why, CoinJoin detection, legacy scripts, OP_RETURN, fee rate, and the full input → output flow.
+- **Grades:** 85+ Frosted · 65+ Tinted · 40+ Clear · under 40 See-through.
+- **Fix your privacy:** six habits that defeat the common heuristics.
+- **Settings:** point GLASS at your own mempool instance so no third party sees your lookups.
 
-| Page | What it does |
-|---|---|
-| `#/` | Landing: narrative, how the mine works, halving countdown, quick guide, numbers, FAQ |
-| `#/market` | Browse the collection: sort by rarity / hash power, filter by trait, open a piece for its full breakdown |
-| `#/hashpower` | Look up any piece, or build a trait set, and see its hash power, rank and weekly production |
-| `#/wallet` | Connect UniSat or Xverse (or paste an address) and scan it for pieces and production |
-| `#/claim` | Weekly schedule, what's claimable, and a signed claim submitted to `claimApi` |
+No backend, no accounts, no tracking. The browser talks to a mempool.space-compatible API directly, and the analysis runs locally (`src/lib/analyze.ts`). Results are heuristics, the same ones chain analysts use, not certainties.
 
-Built with Vite, React and TypeScript. No backend.
+Built with Vite, React and TypeScript. Deployed on Vercel from `main`.
 
 ## Run
 
@@ -25,30 +22,11 @@ npm run dev        # http://localhost:3000
 npm run build && npm run preview
 ```
 
-## Editing content
+## Editing
 
-Everything lives in [`src/config.ts`](src/config.ts). `null` renders as "TBD".
-
-| What | Config |
+| What | Where |
 |---|---|
-| Project name, ticker, what a piece is called | `name`, `ticker`, `piece` |
-| Tagline, description, footer sign-off | `tagline`, `description`, `closingLine` |
-| Supply, claim cadence, hash power rule | `token` |
-| Halving block and estimated date (countdown) | `btcHalving` |
-| Collection size, mint price, inscription ID | `collection` |
-| X, marketplace, hash power tool, claim page | `links` |
-
-| Mining start (week 1) | `mining.start` |
-| Hash power formula and floor trait bonuses | `hashPower` |
-| Claim endpoint | `claimApi` |
-| Link to one piece on the marketplace | `links.marketplaceItem` (`{id}` = inscription ID) |
-
-The page `<title>` and meta description in `index.html` should match the config.
-
-## Going live
-
-The site starts on a **generated sample collection** (`collection.sample: true`) so every page works before launch. A banner says so on the market, hash power, wallet and claim pages.
-
-1. **Collection.** Put the real list in `public/collection.json` as `[{ "id": "<inscription id>", "traits": [{ "type": "Mask", "value": "Redacted" }, …] }, …]` and set `collection.sample` to `false`. Rarity, ranks and hash power are computed from it. Update `TRAITS` in `src/data/collection.ts` to match the real trait types and values (used for filters and the trait builder), and `src/components/PieceArt.tsx` or real images for the art.
-2. **Wallet scan.** With the sample off, a wallet's inscriptions come from the public Hiro Ordinals API and are matched against `collection.json`.
-3. **Claims.** Set `claimApi`. The claim button has the connected wallet sign a message (address, week, piece IDs) and POSTs `{ address, week, message, signature }` as JSON. The backend must verify the signature, check holdings at the week's close, prevent double claims and send the tokens. That backend isn't part of this repo, and claims stay closed until it exists.
+| Name, tagline, default API, example lookups, links | `src/config.ts` (and the title in `index.html`) |
+| Heuristics, scoring and wording of findings | `src/lib/analyze.ts` |
+| Landing page copy | `src/pages/Home.tsx` |
+| Privacy habits | `src/pages/Learn.tsx` |
