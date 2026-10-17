@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SHADE
 
-# Run and deploy your AI Studio app
+*Bitcoin, kept quiet.*
 
-This contains everything you need to run your app locally.
+A single-page site for a BTC + privacy Ordinals collection that mines `$SHADE`:
+21,000,000 max supply, claimed once a week, until the next Bitcoin halving (block 1,050,000).
 
-View your app in AI Studio: https://ai.studio/apps/drive/1XhFDEQMgbI1nthQ0JLEo_wwz0X05cEA4
+Sections: Hero → Narrative (BTC + privacy) → The mine (with halving countdown) → Quick guide → `$SHADE` numbers → FAQ → Links.
 
-## Run Locally
+Built with Vite, React and TypeScript. No wallet connection; the site links out to the marketplace, hash power tool and claim page.
 
-**Prerequisites:**  Node.js
+## Run
 
+```bash
+npm install
+npm run dev        # http://localhost:3000
+npm run build && npm run preview
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Editing content
+
+Everything lives in [`src/config.ts`](src/config.ts). `null` renders as "TBD".
+
+| What | Config |
+|---|---|
+| Project name, ticker, what a piece is called | `name`, `ticker`, `piece` |
+| Tagline, description, footer sign-off | `tagline`, `description`, `closingLine` |
+| Supply, claim cadence, hash power rule | `token` |
+| Halving block and estimated date (countdown) | `btcHalving` |
+| Collection size, mint price, inscription ID | `collection` |
+| X, marketplace, hash power tool, claim page | `links` |
+
+The page `<title>` and meta description in `index.html` should match the config.
