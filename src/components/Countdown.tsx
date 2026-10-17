@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { fmtDate, fmtInt, useNow } from "../useNow";
+import { fmtDate, fmtInt, useNow } from "../lib/useNow";
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;

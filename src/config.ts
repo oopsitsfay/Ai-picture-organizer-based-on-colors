@@ -27,22 +27,55 @@ export const config = {
     estimate: "2028-04-15T00:00:00Z",
   },
 
+  /**
+   * Weekly claim schedule. Mining starts at `start`; the supply is split evenly across every
+   * week from `start` to the halving. Week boundaries fall on the same weekday/time as `start`.
+   */
+  mining: {
+    start: "2026-10-19T00:00:00Z", // [TBD] launch
+  },
+
   collection: {
+    /**
+     * `true` while the real collection metadata isn't in yet: the market, hash power tool and
+     * wallet scan run on a generated sample collection of `sampleSize` pieces.
+     * Set to false and put the real list in `public/collection.json` (see README).
+     */
+    sample: true,
+    sampleSize: 2100,
     size: null as string | null,
     mintPrice: null as string | null,
     /** Parent inscription / collection ID, shown in the footer. */
     inscriptionId: null as string | null,
   },
 
+  /**
+   * Hash power = rarity part + floor trait bonuses.
+   * Rarity part: `rarityWeight` × (piece rarity score ÷ top rarity score), so the rarest piece gets the full weight.
+   * Floor traits: traits that trade above the collection floor add a flat bonus each.
+   */
+  hashPower: {
+    base: 10,
+    rarityWeight: 90,
+    floorTraits: {
+      "Mask: Redacted": 40,
+      "Eyes: Laser": 35,
+      "Hood: Gold thread": 30,
+      "Mark: Genesis": 50,
+      "Background: Dark pool": 20,
+    } as Record<string, number>,
+  },
+
+  /** Optional endpoint that accepts signed weekly claims (POST JSON). Claims stay closed while null. */
+  claimApi: null as string | null,
+
   links: {
     x: null as string | null,
     /** Marketplace where the collection trades, e.g. Magic Eden or another Ordinals market. */
     marketplace: null as string | null,
     marketplaceName: null as string | null,
-    /** Tool that shows each piece's hash power from its rarity and traits. */
-    hashTool: null as string | null,
-    /** Page where holders link a wallet, check production and claim. */
-    claim: null as string | null,
+    /** Link to one piece on the marketplace. `{id}` is replaced with the inscription ID. */
+    marketplaceItem: null as string | null,
   },
 };
 
